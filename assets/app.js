@@ -3,13 +3,14 @@ const BATCH_SIZE = 16;
 // illegal（用户名不合法）是站点规则决定的，打开也一样，不需要复核。
 const REVIEWABLE = new Set(['waf', 'error']);
 const REVIEW_KEY = 'sherlock.reviews.v1';
-const STATUS_ORDER = ['claimed', 'available', 'illegal', 'waf', 'error', 'pending'];
+const STATUS_ORDER = ['claimed', 'available', 'illegal', 'waf', 'error', 'unreachable', 'pending'];
 const STATUS_LABEL = {
   claimed: '已注册',
   available: '未注册',
   illegal: '用户名不合法',
   waf: '人机校验拦截',
   error: '请求失败',
+  unreachable: '网络不可达',
   pending: '待检测',
 };
 
@@ -25,13 +26,14 @@ const state = {
   aborted: false,
   total: 0,
   done: 0,
-  batchesLeft: 0,
   startedAt: 0,
   batchTimes: [],
   controllers: new Set(),
   renderTimer: 0,
   reviews: {},
   openReview: null,
+  /** 服务端代取页面的结果缓存：`${username}:${site}` → {state,data} */
+  snapshots: new Map(),
 };
 
 const $ = (id) => document.getElementById(id);
@@ -139,6 +141,18 @@ function onResultClick(event) {
     return;
   }
 
+  const copy = event.target.closest('[data-copy]');
+  if (copy) {
+    copyText(copy.dataset.copy);
+    return;
+  }
+
+  const snap = event.target.closest('[data-snapshot]');
+  if (snap) {
+    fetchSnapshot(snap.dataset.snapshot, snap);
+    return;
+  }
+
   const mark = event.target.closest('[data-review]');
   if (!mark) return;
   const name = mark.dataset.site;
@@ -169,8 +183,94 @@ function onResultClick(event) {
       ? `${name} 已标记为「已注册」`
       : verdict === 'available'
         ? `${name} 已标记为「未注册」`
-        : `${name} 的人工标记已撤销`,
+        : verdict === 'unreachable'
+          ? `${name} 已标记为「网络不可达」，移出待复核`
+          : `${name} 的人工标记已撤销`,
   );
+}
+
+async function copyText(text) {
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+    toast('链接已复制');
+  } catch {
+    toast(text);
+  }
+}
+
+/* ---------------- 服务端代看（/api/snapshot） ---------------- */
+
+const BLOCK_KIND_TEXT = {
+  waf: '人机校验拦截',
+  blocked: '遭到网络层封锁',
+  ratelimit: '被限流',
+  login: '被跳转到登录页',
+  denied: '拒绝访问',
+};
+
+const snapshotKey = (name) => `${state.username}:${name}`;
+
+function snapshotHtml(name) {
+  const entry = state.snapshots.get(snapshotKey(name));
+  if (!entry) return '';
+  if (entry.state === 'loading') return '<div class="snap loading">正在用服务端出口取页面…（通常 3–10 秒）</div>';
+  if (entry.state === 'error') return `<div class="snap bad"><p class="snap-verdict bad">取页失败：${esc(entry.message)}</p></div>`;
+  return renderSnapshot(entry.data);
+}
+
+function renderSnapshot(data) {
+  const kind = data.blockKind ? BLOCK_KIND_TEXT[data.blockKind] || data.blockKind : '';
+  const head = `HTTP ${data.http}${kind ? ` · ${kind}` : ''}`;
+  const hasContent = Boolean(data.title || data.description || data.excerpt);
+
+  let verdict;
+  if (data.blockKind) {
+    // 只要判定为拦截，页面里的内容一律不能当作账号信息 —— 哪怕它"看起来有标题"
+    verdict = `<p class="snap-verdict bad">服务端被挡住了（${head}）。以下是拦截页本身，不能用来判断账号是否存在，这条得靠你自己的网络确认。</p>`;
+  } else if (!hasContent) {
+    verdict = `<p class="snap-verdict bad">服务端拿到了 ${head}，但页面里没有可读内容（可能是纯 JS 渲染，或页面太大只取到脚本和样式）。</p>`;
+  } else {
+    verdict = `<p class="snap-verdict ok">服务端读到的页面（${head}），可据此判断：</p>`;
+  }
+
+  const excerpt = data.blockKind ? (data.excerpt || '').slice(0, 240) : data.excerpt;
+  const body = [
+    data.title && !data.blockKind ? `<p class="snap-title">${esc(data.title)}</p>` : '',
+    data.description && !data.blockKind ? `<p class="snap-desc">${esc(data.description)}</p>` : '',
+    excerpt ? `<pre class="snap-excerpt">${esc(excerpt)}</pre>` : '',
+  ].join('');
+
+  const note = data.truncated ? '<p class="snap-note">页面较大，只读取了前 800KB。</p>' : '';
+
+  return `<div class="snap">${verdict}${body}${note}</div>`;
+}
+
+function repaintSnapshot(name) {
+  const slot = $('result-list').querySelector(`.snap-slot[data-snap-for="${cssEscape(name)}"]`);
+  if (slot) slot.innerHTML = snapshotHtml(name);
+}
+
+async function fetchSnapshot(name, button) {
+  const key = snapshotKey(name);
+  if (state.snapshots.get(key)?.state === 'loading') return;
+  state.snapshots.set(key, { state: 'loading' });
+  repaintSnapshot(name);
+  button.disabled = true;
+  try {
+    const url = new URL('/api/snapshot', location.origin);
+    url.searchParams.set('site', name);
+    url.searchParams.set('u', state.username);
+    const res = await fetch(url, { headers: { accept: 'application/json' } });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    state.snapshots.set(key, { state: 'ok', data });
+  } catch (err) {
+    state.snapshots.set(key, { state: 'error', message: err?.message || '请求失败' });
+  } finally {
+    button.disabled = false;
+    repaintSnapshot(name);
+  }
 }
 
 async function loadSites() {
@@ -203,6 +303,11 @@ function updateCounts() {
 /* ---------------- 扫描 ---------------- */
 
 async function startScan(username) {
+  // 与服务端 validateUsername 保持一致：这些字符会把站点 URL 改写成别的意思
+  if (/[/\\?#&\u0000-\u001f]/.test(username)) {
+    toast('用户名不能包含 / \\ ? # & 等字符');
+    return;
+  }
   const targets = activeSites();
   if (!targets.length) {
     toast('没有可检测的站点');
@@ -217,7 +322,6 @@ async function startScan(username) {
   state.order = targets.map((s) => s.n);
   state.total = targets.length;
   state.done = 0;
-  state.batchesLeft = Math.ceil(targets.length / BATCH_SIZE);
   state.startedAt = Date.now();
   state.batchTimes = [];
   // 扫描期间先看全部，结果落定的同时用户能看到进展；结束后自动切到「已注册」。
@@ -259,7 +363,6 @@ async function startScan(username) {
       if (index >= batches.length) return;
       await runBatch(batches[index], { timeoutMs, serverConcurrency });
       if (state.aborted) return;
-      state.batchesLeft -= 1;
     }
   };
 
@@ -282,7 +385,9 @@ async function runBatch(names, options, attempt = 1) {
     const res = await fetch(`/api/check?${params.toString()}`, { signal: controller.signal });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      throw new Error(body.error || `HTTP ${res.status}`);
+      const error = new Error(body.error || `HTTP ${res.status}`);
+      error.status = res.status;
+      throw error;
     }
     const data = await res.json();
     for (const item of data.results) {
@@ -295,13 +400,15 @@ async function runBatch(names, options, attempt = 1) {
     scheduleRender();
   } catch (err) {
     if (state.aborted || err.name === 'AbortError') return;
-    if (attempt < 2) {
+    // 4xx 是参数错了（比如用户名不合法），重试没有意义；5xx / 网络错误才值得再试一次
+    const retryable = err.status ? err.status >= 500 || err.status === 429 : true;
+    if (retryable && attempt < 2) {
       return runBatch(names, options, attempt + 1);
     }
     for (const name of names) {
       const site = state.results.get(name);
       if (site && site.status === 'pending') {
-        state.results.set(name, { ...site, status: 'error', ms: 0, note: '批次请求失败' });
+        state.results.set(name, { ...site, status: 'error', ms: 0, note: err.message || '批次请求失败' });
       }
     }
     state.done = state.order.filter((n) => state.results.get(n)?.status !== 'pending').length;
@@ -424,7 +531,17 @@ function canReview(item) {
 /* ---------------- 渲染 ---------------- */
 
 function counts() {
-  const out = { claimed: 0, available: 0, illegal: 0, waf: 0, error: 0, pending: 0, review: 0, reviewed: 0 };
+  const out = {
+    claimed: 0,
+    available: 0,
+    illegal: 0,
+    waf: 0,
+    error: 0,
+    unreachable: 0,
+    pending: 0,
+    review: 0,
+    reviewed: 0,
+  };
   for (const name of state.order) {
     const item = state.results.get(name);
     if (!item || item.status === 'pending') {
@@ -440,17 +557,22 @@ function counts() {
   return out;
 }
 
+/** 归到「无法判断」这一栏的所有状态 */
+function unknownCount(c) {
+  return c.illegal + c.waf + c.error + c.unreachable;
+}
+
 function updateStats() {
   const c = counts();
   $('stat-claimed').textContent = c.claimed;
   $('stat-available').textContent = c.available;
-  $('stat-unknown').textContent = c.illegal + c.waf + c.error;
+  $('stat-unknown').textContent = unknownCount(c);
   $('stat-pending').textContent = c.pending;
 
   const tabs = {
     claimed: c.claimed,
     available: c.available,
-    unknown: c.illegal + c.waf + c.error,
+    unknown: unknownCount(c),
     all: state.order.length - c.pending,
   };
   document.querySelectorAll('#filter-tabs .tab').forEach((tab) => {
@@ -547,15 +669,22 @@ function rowHtml(item) {
   const bar = canReview(item)
     ? `<div class="review-bar" data-for="${esc(item.name)}"${open ? '' : ' hidden'}>
         <p class="review-tip">
-          <span>${esc(item.note || '这条结果没法自动判断')}。拦截页来自云函数的机房 IP，用自己的浏览器打开确认后标记即可。</span>
+          <span>${esc(item.note || '这条结果没法自动判断')}。拦截页来自云函数的机房 IP，需要你用自己的浏览器确认，或点下面的「让服务器代看」。</span>
           <span class="review-tip-sub">标记只保存在本机浏览器，重新检测同一个用户名会自动带出。</span>
         </p>
         <div class="review-actions">
           <a class="mini-btn primary" href="${esc(link)}" target="_blank" rel="noreferrer noopener">打开 ${esc(host || item.name)} ↗</a>
           <button type="button" class="mini-btn ok${review?.v === 'claimed' ? ' on' : ''}" data-review="claimed" data-site="${esc(item.name)}">已注册</button>
           <button type="button" class="mini-btn no${review?.v === 'available' ? ' on' : ''}" data-review="available" data-site="${esc(item.name)}">未注册</button>
+          <button type="button" class="mini-btn off${review?.v === 'unreachable' ? ' on' : ''}" data-review="unreachable" data-site="${esc(item.name)}">打不开</button>
           ${review ? `<button type="button" class="mini-btn ghost" data-review="" data-site="${esc(item.name)}">撤销</button>` : ''}
         </div>
+        <div class="review-aux">
+          <button type="button" class="aux-link" data-copy="${esc(link)}">复制链接</button>
+          <button type="button" class="aux-link" data-snapshot="${esc(item.name)}">让服务器代看</button>
+          <span class="aux-hint">本地打不开就点「让服务器代看」：由云端出口去取这个页面，能取到就把内容摊在这里给你判断，取不到也会说明被什么拦住。</span>
+        </div>
+        <div class="snap-slot" data-snap-for="${esc(item.name)}">${snapshotHtml(item.name)}</div>
       </div>`
     : '';
 
@@ -567,7 +696,7 @@ function rowHtml(item) {
         <span class="row-url">${esc(host || home)}</span>
       </span>
       <span class="badge ${esc(status)}">${esc(label)}</span>
-      <span class="row-meta"><span class="meta-num">${esc(meta)}${note}</span>${action}</span>
+      <span class="row-meta"><span class="meta-num">${esc(meta)}</span>${note}${action}</span>
     </div>
     ${bar}
   </li>`;
@@ -679,8 +808,9 @@ function applyUrlParams() {
   }
   updateCounts();
   if (username) {
-    $('username').value = username;
-    startScan(username.trim());
+    const value = username.trim().slice(0, 64);
+    $('username').value = value;
+    if (value) startScan(value);
   }
 }
 

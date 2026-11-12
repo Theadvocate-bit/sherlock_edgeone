@@ -1,14 +1,17 @@
 #!/usr/bin/env node
 /**
- * 把 sherlock-project/sherlock 的 data.json 编译成 EdgeOne 版本使用的紧凑数据集。
+ * 把 sherlock-project/sherlock 的 data.json 编译成本项目使用的紧凑数据集。
  *
  *   node scripts/build-data.mjs            # 用本地快照 data/sherlock-source.json
  *   node scripts/build-data.mjs --remote   # 直接从 GitHub 拉最新数据（构建机需可访问 GitHub）
  *
- * 输出：
- *   data/sites.json      给前端 / 静态访问用的精简数据
- *   lib/sites-data.mjs   同一份数据内联成 JS 模块，供云函数静态 import
- *                        （避免运行时用相对路径读 fs——打包后目录会变，路径会失效）
+ * 输出两份（内容相同，用途不同）：
+ *   data/sites.json                     便于人工查看 / diff
+ *   cloud-functions/lib/sites-data.js   云函数静态 import 的模块
+ *
+ * 为什么要额外生成一个 .js：云函数打包后目录结构由平台决定，用相对路径去
+ * readFile 很容易在线上失效；把数据变成普通 ES 模块后，它跟着 import 图走，
+ * 不再依赖运行时的文件布局。
  */
 import { readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -17,7 +20,7 @@ import path from 'node:path';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SOURCE = path.join(ROOT, 'data', 'sherlock-source.json');
 const OUTPUT = path.join(ROOT, 'data', 'sites.json');
-const MODULE_OUTPUT = path.join(ROOT, 'lib', 'sites-data.mjs');
+const MODULE_OUTPUT = path.join(ROOT, 'cloud-functions', 'lib', 'sites-data.js');
 const UPSTREAM =
   'https://raw.githubusercontent.com/sherlock-project/sherlock/master/sherlock_project/resources/data.json';
 
@@ -72,6 +75,22 @@ async function loadSource() {
 
 const raw = await loadSource();
 const names = Object.keys(raw).filter((k) => k !== '$schema');
+/**
+ * 上游数据修正表：只改"已经和现实不符"的字段，避免手改 data/sites.json
+ * （手改的会在下次 build 时被覆盖，反而更难发现问题）。
+ *
+ *   Twitter: urlProbe 指向的 nitter 实例早已下线，探测必然是 fetch failed；
+ *            x.com 本体直连可访问，去掉 probe，并补上新版 404 页的特征串。
+ */
+const PATCHES = {
+  Twitter(info) {
+    delete info.urlProbe;
+    const extra = ['<title>User Profile Not Found', 'This account doesn’t exist'];
+    const current = Array.isArray(info.errorMsg) ? info.errorMsg : info.errorMsg ? [info.errorMsg] : [];
+    info.errorMsg = [...current, ...extra.filter((m) => !current.includes(m))];
+  },
+};
+
 const sites = [];
 const skipped = [];
 
@@ -81,7 +100,9 @@ for (const name of names) {
     skipped.push(name);
     continue;
   }
-  const item = compact(name, info);
+  const patched = { ...info };
+  if (PATCHES[name]) PATCHES[name](patched);
+  const item = compact(name, patched);
   item.k = POPULAR.includes(name) ? 1 : 0;
   sites.push(item);
 }
@@ -99,17 +120,19 @@ const payload = {
 };
 
 await writeFile(OUTPUT, JSON.stringify(payload));
-
-// 内联成 JS 模块：云函数静态 import 它，打包器会直接打进去，
-// 不依赖运行时 fs 相对路径（Makers 打包后 data/ 不一定在函数旁边）。
-const moduleSource =
-  '// 本文件由 `node scripts/build-data.mjs` 自动生成，请勿手改。\n' +
-  '// 数据来自 sherlock-project/sherlock，仅在构建时刷新。\n' +
-  'export default ' + JSON.stringify(payload) + ';\n';
-await writeFile(MODULE_OUTPUT, moduleSource);
-
+await writeFile(
+  MODULE_OUTPUT,
+  [
+    '// 本文件由 scripts/build-data.mjs 生成，请勿手工编辑。',
+    `// 上游：${UPSTREAM}`,
+    '// 命名导出（不用 export default）：平台的入口识别会把 default 导出当成框架实例，',
+    '// 命名导出才能确保这个文件只被当作辅助模块。',
+    `export const siteData = ${JSON.stringify(payload)};`,
+    '',
+  ].join('\n'),
+);
 const bytes = Buffer.byteLength(JSON.stringify(payload));
 console.log(`✓ ${sites.length} 个站点（常用 ${payload.popular} 个），输出 ${(bytes / 1024).toFixed(1)} KB`);
-console.log(`  data/sites.json + lib/sites-data.mjs 已更新`);
+console.log(`  → data/sites.json + cloud-functions/lib/sites-data.js`);
 if (skipped.length) console.log(`  跳过 ${skipped.length} 个无效条目: ${skipped.join(', ')}`);
 if (popularMissing.length) console.log(`  ⚠ 常用列表里这些站点在数据集中不存在: ${popularMissing.join(', ')}`);

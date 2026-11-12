@@ -1,14 +1,15 @@
 {
-  "name": "sherlock-edgeone",
-  "version": "1.0.0",
+  "name": "sherlock-web",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
-  "description": "Sherlock 的 EdgeOne Makers 部署版：在云函数里并发检测用户名是否存在",
+  "description": "Sherlock 的 Serverless 部署版：在 Node.js 云函数里并发检测用户名是否存在",
   "scripts": {
     "build:data": "node scripts/build-data.mjs",
     "build:data:remote": "node scripts/build-data.mjs --remote",
     "preview": "node server/dev.mjs",
-    "test": "node scripts/test-engine.mjs"
+    "test": "node scripts/test-engine.mjs",
+    "test:package": "node scripts/check-package.mjs"
   },
   "engines": {
     "node": ">=18"

@@ -1,5 +1,13 @@
-import { checkBatch, validateUsername, LIMITS, STATUS } from '../../lib/engine.mjs';
-import { getSiteIndex } from '../../lib/sites.mjs';
+import { checkBatch, validateUsername, LIMITS, STATUS } from '../lib/engine.js';
+import { getSiteIndex } from '../lib/sites.js';
+
+/**
+ * GET  /api/check?u=<用户名>&s=<站点名,逗号分隔>&t=<超时ms>&c=<并发>
+ * POST /api/check  body: { username | u, sites[] | s[], timeoutMs, concurrency }
+ *
+ * 一次调用探测一批站点（默认上限 24），内部并发 fetch。
+ * 只做"取页面 + 按 Sherlock 规则判定"，不做任何外网中转。
+ */
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -63,12 +71,7 @@ export async function onRequest(context) {
   }
 
   const startedAt = Date.now();
-  let index;
-  try {
-    index = await getSiteIndex(new URL(context.request.url).origin);
-  } catch (err) {
-    return json({ error: err.message }, 500);
-  }
+  const index = getSiteIndex();
 
   const sites = [];
   const missing = [];

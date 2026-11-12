@@ -2,21 +2,22 @@
 /**
  * 引擎冒烟测试：拿几个真实站点验证三种判定逻辑是否与 Sherlock 一致。
  *   node scripts/test-engine.mjs [username]
+ *
+ * 特意走和线上完全相同的入口（cloud-functions/lib），
+ * 这样数据模块、判定逻辑一旦在打包后失效，这里能第一时间发现。
  */
-import { readFile } from 'node:fs/promises';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { checkBatch } from '../lib/engine.mjs';
+import { checkBatch } from '../cloud-functions/lib/engine.js';
+import { getSiteIndex, getSiteData } from '../cloud-functions/lib/sites.js';
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const data = JSON.parse(await readFile(path.join(ROOT, 'data', 'sites.json'), 'utf8'));
-const index = new Map(data.sites.map((s) => [s.n, s]));
+const index = getSiteIndex();
+const data = getSiteData();
 
 const username = process.argv[2] || 'torvalds';
 const targets = ['GitHub', 'GitLab', 'Reddit', 'HackerNews', 'npm', 'PyPi', 'Keybase', 'Codeforces'];
 const sites = targets.map((n) => index.get(n)).filter(Boolean);
 
-console.log(`\n探测用户名 "${username}"，${sites.length} 个站点\n`);
+console.log(`\n数据集：${data.count} 个站点（常用 ${data.popular}），生成于 ${data.generatedAt}`);
+console.log(`探测用户名 "${username}"，${sites.length} 个站点\n`);
 const started = Date.now();
 const results = await checkBatch(sites, username, { timeoutMs: 10000, concurrency: 8 });
 for (const r of results) {

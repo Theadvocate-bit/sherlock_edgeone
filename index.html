@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sherlock Edge · 跨平台用户名侦察</title>
-  <meta name="description" content="输入一个用户名，在 480+ 个社交/开发者站点上并发检测账号是否存在。基于 Sherlock 数据，运行在 EdgeOne Makers 云函数上。">
+  <title>Sherlock · 跨平台用户名侦察</title>
+  <meta name="description" content="输入一个用户名，在 480+ 个社交/开发者站点上并发检测账号是否存在。判定逻辑与站点数据来自开源项目 Sherlock。">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔍</text></svg>">
   <link rel="stylesheet" href="/assets/style.css">
 </head>
@@ -19,12 +19,12 @@
           </svg>
         </span>
         <div class="brand-text">
-          <h1>Sherlock <em>Edge</em></h1>
-          <p>跨平台用户名侦察 · EdgeOne Makers</p>
+          <h1>Sherlock</h1>
+          <p>跨平台用户名侦察</p>
         </div>
       </div>
       <nav class="topnav">
-        <span class="runtime" id="runtime-chip">云函数 · Node.js</span>
+        <span class="runtime" id="runtime-chip">正在加载站点…</span>
         <a href="https://github.com/sherlock-project/sherlock" target="_blank" rel="noreferrer">上游数据</a>
       </nav>
     </div>
@@ -162,6 +162,8 @@
         <li><b>未注册</b>：状态码命中站点的"不存在"规则（404/错误码），或页面里出现站点约定的错误文案。</li>
         <li><b>无法判断</b>：命中 Cloudflare 等 WAF 人机校验、超时、连接失败，或用户名不满足该站点规则（如只允许 4–12 位字母数字）。</li>
         <li><b>人工复核</b>：拦截页通常是因为云函数的机房 IP 被风控，程序无法自己通过人机验证。点开那一行的「复核 →」，用你自己的浏览器打开确认，回来标成已注册 / 未注册即可 —— 标记会存在本机，重新检测时自动带出，并计入统计与导出。</li>
+        <li><b>让服务器代看</b>：本地打不开时，可以让云端出口再取一次这个页面，把服务端读到的标题、简介、正文摊在你面前。取到了就据此判断；取不到会如实说明被什么拦住（人机校验 / 网络封锁 / 限流 / 跳登录页），不会拿拦截页冒充真实资料。</li>
+        <li><b>打不开</b>：如果你的网络（比如国内直连）访问不了该站点，就标「打不开」。它仍计入「无法判断」、不会变成"未注册"，只是不再占用待复核队列 —— 看不到不等于没注册，工具不替你猜。</li>
         <li>结果只是"某个时刻该 URL 的响应"，不代表账号归属，也不保证与站点真实状态一致；部分站点有频率限制。</li>
       </ul>
     </section>
@@ -170,8 +172,6 @@
   <footer class="footer">
     <div class="wrap">
       <span>数据来自 <a href="https://github.com/sherlock-project/sherlock" target="_blank" rel="noreferrer">sherlock-project/sherlock</a>（MIT），检测逻辑移植自其 Python 实现。</span>
-      <span class="dot">·</span>
-      <span>部署于 <a href="https://edgeone.ai/pages" target="_blank" rel="noreferrer">EdgeOne Makers</a></span>
     </div>
   </footer>
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 本地预览服务器：模拟 EdgeOne Makers 的「静态资源 + 函数路由」行为。
+ * 本地预览服务器：模拟云函数平台的「静态资源 + 函数路由」行为。
  * 不需要登录，`npm run preview` 后访问 http://localhost:8787
  */
 import { createServer } from 'node:http';
@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 
 import { onRequest as checkHandler, onRequestOptions } from '../cloud-functions/api/check.js';
 import { onRequestGet as sitesHandler } from '../cloud-functions/api/sites.js';
+import { onRequestGet as snapshotHandler, onRequestOptions as snapshotOptions } from '../cloud-functions/api/snapshot.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = Number(process.env.PORT) || 8787;
@@ -53,6 +54,10 @@ const server = createServer(async (req, res) => {
       if (req.method === 'OPTIONS') return send(res, await onRequestOptions());
       return send(res, await checkHandler({ request: await toRequest(req), params: {}, env: {} }));
     }
+    if (pathname === '/api/snapshot') {
+      if (req.method === 'OPTIONS') return send(res, await snapshotOptions());
+      return send(res, await snapshotHandler({ request: await toRequest(req), params: {}, env: process.env }));
+    }
     if (pathname === '/api/sites') {
       return send(res, await sitesHandler({ request: await toRequest(req), params: {}, env: {} }));
     }
@@ -82,5 +87,5 @@ const server = createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`\n  Sherlock Edge 本地预览 → http://localhost:${PORT}\n`);
+  console.log(`\n  Sherlock 本地预览 → http://localhost:${PORT}\n`);
 });

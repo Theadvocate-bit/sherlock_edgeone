@@ -2,19 +2,15 @@
   "buildCommand": "node scripts/build-data.mjs",
   "nodeVersion": "22.11.0",
   "cloudFunctions": {
-    "maxDuration": 30
+    "nodejs": {
+      "maxDuration": 60
+    }
   },
   "headers": [
     {
       "source": "/assets/*",
       "headers": [
         { "key": "Cache-Control", "value": "public, max-age=3600" }
-      ]
-    },
-    {
-      "source": "/data/*",
-      "headers": [
-        { "key": "Cache-Control", "value": "public, max-age=600" }
       ]
     },
     {

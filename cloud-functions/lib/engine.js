@@ -1,5 +1,5 @@
 /**
- * Sherlock 判定引擎（EdgeOne 版）
+ * Sherlock 判定引擎（Serverless 版）
  * ------------------------------------------------------------------
  * 逻辑移植自 sherlock-project/sherlock 的 sherlock_project/sherlock.py：
  *   - 先用站点自己的 regexCheck 校验用户名是否合法，不合法直接标 illegal；
@@ -45,7 +45,7 @@ const DEFAULT_HEADERS = {
  * WAF 指纹：命中说明拿到的是拦截页/人机校验页，而不是真实个人主页。
  * 前 4 条与 sherlock 上游保持一致，后几条是针对常见 CDN 的补充。
  */
-const WAF_PATTERNS = [
+export const WAF_PATTERNS = [
   '<span id="challenge-error-text">',
   'AwsWafIntegration.forceRefreshToken',
   '"perimeterxIdentifiers",{enumerable:',
@@ -56,7 +56,21 @@ const WAF_PATTERNS = [
   'Checking your browser before accessing',
   'Please enable JS and disable any ad blocker',
   'ddos-guard',
+  // Vercel / DataDome / 通用浏览器校验页：这些页面标题往往"看起来很正经"，
+  // 不识别出来就会被当成真实资料展示给用户，比不显示更糟
+  'Vercel Security Checkpoint',
+  'verifying your browser',
+  'captcha-delivery.com',
+  'Please complete the security check',
+  'Enable JavaScript and cookies to continue',
+  'Pardon Our Interruption',
 ];
+
+/** 正文命中任一指纹即认为拿到的是拦截页 */
+export function detectWaf(text) {
+  if (!text) return false;
+  return WAF_PATTERNS.some((p) => text.includes(p));
+}
 
 /** 把 "{}" 占位符替换成用户名（支持字符串 / 数组 / 对象，保持 sherlock 的递归语义） */
 export function interpolate(value, username) {
@@ -109,8 +123,14 @@ function buildProbe(site, username) {
   return interpolate(site.p || site.u, encoded);
 }
 
-async function readCapped(response, maxBytes) {
-  if (!response.body) return '';
+/**
+ * 读响应正文，超过 maxBytes 就停下。服务端函数内存有限，
+ * 有些站点会吐几十 MB 的页面，必须边读边截断。
+ *
+ * @returns {Promise<{text:string, truncated:boolean}>}
+ */
+export async function readCappedText(response, maxBytes) {
+  if (!response.body) return { text: '', truncated: false };
   const reader = response.body.getReader();
   const chunks = [];
   let size = 0;
@@ -120,9 +140,9 @@ async function readCapped(response, maxBytes) {
       const { done, value } = await reader.read();
       if (done) break;
       if (!value) continue;
-      chunks.push(value);
-      size += value.byteLength;
-      if (size >= maxBytes) {
+      if (size + value.byteLength > maxBytes) {
+        chunks.push(value.subarray(0, Math.max(0, maxBytes - size)));
+        size = maxBytes;
         truncated = true;
         try {
           await reader.cancel();
@@ -131,24 +151,64 @@ async function readCapped(response, maxBytes) {
         }
         break;
       }
+      chunks.push(value);
+      size += value.byteLength;
     }
   } catch {
-    /* 读取中断时用已到手的内容继续判断 */
+    // 读取中断（连接被重置等）时用已到手的内容继续判断，比整条丢掉更有用
+    truncated = true;
   }
-  const total = chunks.reduce((n, c) => n + c.byteLength, 0);
-  const merged = new Uint8Array(total);
+  const merged = new Uint8Array(size);
   let offset = 0;
-  for (const c of chunks) {
-    merged.set(c, offset);
-    offset += c.byteLength;
+  for (const chunk of chunks) {
+    merged.set(chunk, offset);
+    offset += chunk.byteLength;
   }
-  return new TextDecoder('utf-8', { fatal: false }).decode(merged) + (truncated ? '' : '');
+  return { text: new TextDecoder('utf-8', { fatal: false }).decode(merged), truncated };
 }
 
 function timeoutSignal(ms) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(new Error('timeout')), ms);
   return { signal: controller.signal, clear: () => clearTimeout(timer) };
+}
+
+/**
+ * 这些状态码表示"服务器没让我们看"，而不是"账号不存在"。
+ * Sherlock 上游把任何非 2xx 都当成未注册，遇到 Cloudflare/风控就会批量谎报"未注册"；
+ * 这里单独拦下来，交给 UI 的人工复核去处理。
+ */
+const BLOCKED_STATUS = new Set([401, 403, 406, 418, 419, 429]);
+
+function isBlockedStatus(status) {
+  return BLOCKED_STATUS.has(status) || status >= 500;
+}
+
+/**
+ * "用户不存在"特征匹配。绝大多数站点是一段 HTML 片段，子串包含即可；
+ * 但少数站点（如 GitLab）拿 JSON API 当探测端点，errorMsg 是 "[]" ——
+ * 这种短符号做子串匹配会被页面里任意 JS/CSS 误伤，所以能解析成 JSON 时按结构比对。
+ *
+ * @returns {'hit'|'miss'|'malformed'} malformed 表示正文根本不是 JSON
+ */
+function messageHit(text, msg) {
+  const needle = msg.trim();
+  if (!/^[[{]/.test(needle)) return text.includes(msg) ? 'hit' : 'miss';
+  if (!text.includes(needle)) return 'miss';
+  let expected;
+  try {
+    expected = JSON.parse(needle);
+  } catch {
+    return text.includes(msg) ? 'hit' : 'miss';
+  }
+  let actual;
+  try {
+    actual = JSON.parse(text);
+  } catch {
+    return 'malformed';
+  }
+  if (Array.isArray(expected)) return Array.isArray(actual) && actual.length === 0 ? 'hit' : 'miss';
+  return JSON.stringify(actual) === JSON.stringify(expected) ? 'hit' : 'miss';
 }
 
 /**
@@ -200,7 +260,7 @@ export async function checkSite(site, username, options = {}) {
         redirect,
         signal,
       });
-      const text = m === 'HEAD' ? '' : await readCapped(res, maxBodyBytes);
+      const text = m === 'HEAD' ? '' : (await readCappedText(res, maxBodyBytes)).text;
       return { res, text };
     } finally {
       clear();
@@ -254,13 +314,29 @@ export async function checkSite(site, username, options = {}) {
       result.note = '站点缺少 errorMsg，无法判定';
       return result;
     }
-    const hit = messages.some((msg) => typeof msg === 'string' && text.includes(msg));
+    let hit = false;
+    let malformed = false;
+    for (const msg of messages) {
+      if (typeof msg !== 'string') continue;
+      const verdict = messageHit(text, msg);
+      if (verdict === 'hit') {
+        hit = true;
+        break;
+      }
+      if (verdict === 'malformed') malformed = true;
+    }
+
     if (hit) {
       result.status = STATUS.AVAILABLE;
+    } else if (malformed) {
+      // 探测端点是 JSON API（如 GitLab），却返回了非 JSON 正文 ——
+      // 说明拿到的不是接口响应（多半是拦截页），不能顺着 2xx 当成"已注册"
+      result.status = STATUS.ERROR;
+      result.note = '探测接口没返回预期内容（可能被拦截）';
     } else if (status === 404 || status === 410) {
       // 页面本身就 404，基本可以确定账号不存在
       result.status = STATUS.AVAILABLE;
-    } else if (status === 401 || status === 403 || status === 406 || status === 418 || status === 419 || status === 429 || status >= 500) {
+    } else if (isBlockedStatus(status)) {
       // 未命中"不存在"特征 + 明显是拒绝/限流状态码 → 服务端拿不到真实页面，不臆断
       result.status = STATUS.ERROR;
       result.note = `HTTP ${status}，疑似反爬拦截，未取到真实页面`;
@@ -279,6 +355,10 @@ export async function checkSite(site, username, options = {}) {
       // 目标站点自己挂了或被限流，不能据此断定"未注册"
       result.status = STATUS.ERROR;
       result.note = `HTTP ${status}，目标站点不可用或限流`;
+    } else if (isBlockedStatus(status)) {
+      // 401/403/406/418/419：明确拒绝访问，同样不能当成"用户名不存在"
+      result.status = STATUS.ERROR;
+      result.note = `HTTP ${status}，疑似反爬拦截，未取到真实页面`;
     } else if (status >= 300 || status < 200) {
       result.status = STATUS.AVAILABLE;
     }
@@ -286,7 +366,14 @@ export async function checkSite(site, username, options = {}) {
 
   // 5) 跳转判定
   if (errorTypes.includes('response_url') && result.status !== STATUS.AVAILABLE) {
-    result.status = status >= 200 && status < 300 ? STATUS.CLAIMED : STATUS.AVAILABLE;
+    if (status >= 200 && status < 300) {
+      result.status = STATUS.CLAIMED;
+    } else if (isBlockedStatus(status)) {
+      result.status = STATUS.ERROR;
+      result.note = `HTTP ${status}，疑似反爬拦截，未取到真实页面`;
+    } else {
+      result.status = STATUS.AVAILABLE;
+    }
   }
 
   if (result.status === STATUS.UNKNOWN) {
@@ -337,8 +424,10 @@ export function validateUsername(username) {
   if (value.length > LIMITS.maxUsernameLength) {
     return { ok: false, error: `用户名长度不能超过 ${LIMITS.maxUsernameLength} 个字符` };
   }
-  if (/[\s\u0000-\u001f]/.test(value) && !/^[\w.\- ]+$/.test(value)) {
-    return { ok: false, error: '用户名包含非法字符' };
+  // 这些字符会被原样插进站点 URL 模板，能把路径或查询串改写成别的意思
+  // （例如 a/b 变成两层路径、a?b 变成查询参数）。它们在任何站点上都不是合法用户名字符。
+  if (/[/\\?#&\u0000-\u001f]/.test(value)) {
+    return { ok: false, error: '用户名不能包含 / \\ ? # & 或控制字符' };
   }
   return { ok: true, value };
 }
