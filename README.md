@@ -31,6 +31,9 @@ sherlock_edgeone/
 
 Makers 按文件系统自动生成路由：`cloud-functions/api/sherlock.py` → `https://<你的域名>/api/sherlock`。
 
+项目根目录的 `index.html` 会被 Makers 作为静态首页托管在 `/`，是一个调用该接口的网页版查询界面
+（输入用户名 → 按状态分组展示结果）。直接访问 `https://<域名>/` 即可使用，无需拼 URL。
+
 ---
 
 ## 部署
