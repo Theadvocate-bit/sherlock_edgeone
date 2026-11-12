@@ -1,229 +1,181 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sherlock — 用户名跨平台查询</title>
-<style>
-  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-  :root{
-    --bg:#0f1117;--surface:#1a1d27;--surface-2:#242836;
-    --border:#2e3345;--text:#e4e6ef;--text-2:#9ca3af;
-    --accent:#6366f1;--accent-2:#818cf8;
-    --green:#34d399;--gray:#6b7280;--yellow:#fbbf24;--red:#f87171;--purple:#a78bfa;
-  }
-  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
-    background:var(--bg);color:var(--text);min-height:100vh;line-height:1.6}
-
-  .container{max-width:720px;margin:0 auto;padding:3rem 1.5rem 4rem}
-
-  header{text-align:center;margin-bottom:2.5rem}
-  header h1{font-size:1.8rem;font-weight:700;margin-bottom:.5rem;
-    background:linear-gradient(135deg,var(--accent),var(--accent-2));
-    -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
-  header p{color:var(--text-2);font-size:.9rem}
-
-  .search-box{display:flex;gap:.75rem;margin-bottom:1.25rem}
-  .search-box input{flex:1;padding:.8rem 1.1rem;font-size:1rem;
-    background:var(--surface);border:1px solid var(--border);border-radius:.6rem;
-    color:var(--text);outline:none;transition:border-color .2s}
-  .search-box input:focus{border-color:var(--accent)}
-  .search-box input::placeholder{color:var(--text-2)}
-  .search-box button{padding:.8rem 1.5rem;font-size:1rem;font-weight:500;
-    background:var(--accent);color:#fff;border:none;border-radius:.6rem;cursor:pointer;
-    transition:background .2s,transform .1s;white-space:nowrap}
-  .search-box button:hover{background:var(--accent-2)}
-  .search-box button:active{transform:scale(.97)}
-  .search-box button:disabled{opacity:.5;cursor:not-allowed}
-
-  .options{display:flex;flex-wrap:wrap;gap:.6rem;margin-bottom:1.5rem;font-size:.85rem}
-  .options label{display:flex;align-items:center;gap:.4rem;color:var(--text-2);
-    cursor:pointer;user-select:none}
-  .options input[type="checkbox"]{accent-color:var(--accent);cursor:pointer}
-
-  .status{padding:1rem;text-align:center;color:var(--text-2);font-size:.9rem;
-    background:var(--surface);border-radius:.6rem;margin-bottom:1rem}
-  .status.loading::before{content:"";display:inline-block;width:1rem;height:1rem;
-    border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;
-    animation:spin .8s linear infinite;margin-right:.5rem;vertical-align:middle}
-  @keyframes spin{to{transform:rotate(360deg)}}
-  .status.error{color:var(--red)}
-
-  .summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));
-    gap:.75rem;margin-bottom:1.5rem}
-  .summary-card{background:var(--surface);border:1px solid var(--border);
-    border-radius:.6rem;padding:1rem;text-align:center}
-  .summary-card .num{font-size:1.6rem;font-weight:700}
-  .summary-card .label{font-size:.75rem;color:var(--text-2);margin-top:.2rem}
-
-  .results{display:flex;flex-direction:column;gap:1.25rem}
-  .group h2{font-size:.85rem;color:var(--text-2);text-transform:uppercase;
-    letter-spacing:.05em;margin-bottom:.6rem;display:flex;align-items:center;gap:.5rem}
-  .group h2 .count{background:var(--surface-2);padding:.1rem .5rem;border-radius:1rem;font-size:.75rem}
-  .group h2 .dot{width:.5rem;height:.5rem;border-radius:50%}
-  .dot-claimed{background:var(--green)}.dot-available{background:var(--gray)}
-  .dot-waf{background:var(--purple)}.dot-unknown{background:var(--yellow)}
-  .dot-illegal{background:var(--red)}
-
-  .site-list{display:grid;gap:.4rem}
-  .site-item{display:flex;align-items:center;justify-content:space-between;
-    padding:.65rem .9rem;background:var(--surface);border:1px solid var(--border);
-    border-radius:.5rem;transition:border-color .2s}
-  .site-item:hover{border-color:var(--accent)}
-  .site-item a{color:var(--text);text-decoration:none;font-size:.9rem;font-weight:500}
-  .site-item a:hover{color:var(--accent-2)}
-  .site-item .meta{display:flex;align-items:center;gap:.75rem;font-size:.75rem;color:var(--text-2)}
-  .badge{padding:.15rem .5rem;border-radius:.3rem;font-size:.7rem;font-weight:600;
-    text-transform:uppercase;letter-spacing:.03em}
-  .badge-claimed{background:rgba(52,211,153,.15);color:var(--green)}
-  .badge-available{background:rgba(107,114,128,.15);color:var(--gray)}
-  .badge-waf{background:rgba(167,139,250,.15);color:var(--purple)}
-  .badge-unknown{background:rgba(251,191,36,.15);color:var(--yellow)}
-  .badge-illegal{background:rgba(248,113,113,.15);color:var(--red)}
-
-  .hidden{display:none}
-  footer{text-align:center;margin-top:3rem;color:var(--text-2);font-size:.8rem}
-  footer a{color:var(--accent-2);text-decoration:none}
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sherlock Edge · 跨平台用户名侦察</title>
+  <meta name="description" content="输入一个用户名，在 480+ 个社交/开发者站点上并发检测账号是否存在。基于 Sherlock 数据，运行在 EdgeOne Makers 云函数上。">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔍</text></svg>">
+  <link rel="stylesheet" href="/assets/style.css">
 </head>
 <body>
-<div class="container">
-  <header>
-    <h1>Sherlock</h1>
-    <p>输入用户名，跨 481 个社交平台查找账号</p>
+  <header class="topbar">
+    <div class="wrap topbar-inner">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+            <circle cx="10.5" cy="10.5" r="6.5"></circle>
+            <path d="M20 20l-4.7-4.7"></path>
+          </svg>
+        </span>
+        <div class="brand-text">
+          <h1>Sherlock <em>Edge</em></h1>
+          <p>跨平台用户名侦察 · EdgeOne Makers</p>
+        </div>
+      </div>
+      <nav class="topnav">
+        <span class="runtime" id="runtime-chip">云函数 · Node.js</span>
+        <a href="https://github.com/sherlock-project/sherlock" target="_blank" rel="noreferrer">上游数据</a>
+      </nav>
+    </div>
   </header>
 
-  <div class="search-box">
-    <input type="text" id="username" placeholder="输入用户名，如 torvalds"
-      autocomplete="off" spellcheck="false">
-    <button id="search-btn">查询</button>
-  </div>
+  <main class="wrap">
+    <section class="hero">
+      <h2>这个用户名，被多少站点注册了？</h2>
+      <p class="hero-sub">
+        输入一个用户名，服务端会并发访问各站点主页，按状态码 / 关键词 / 跳转三种规则判断账号是否存在。
+        共 <strong id="site-count">—</strong> 个站点可检测。
+      </p>
 
-  <div class="options">
-    <label><input type="checkbox" id="exclude-nsfw">排除 NSFW</label>
-    <label><input type="checkbox" id="hide-available" checked>隐藏未注册</label>
-    <label>超时 <input type="number" id="timeout" value="20" min="1" max="60"
-      style="width:3.5rem;background:var(--surface);border:1px solid var(--border);
-      border-radius:.3rem;color:var(--text);padding:.2rem .4rem"></label>
-  </div>
+      <form class="searchbar" id="search-form" autocomplete="off">
+        <span class="search-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <circle cx="10.5" cy="10.5" r="6.5"></circle><path d="M20 20l-4.7-4.7"></path>
+          </svg>
+        </span>
+        <input id="username" name="username" type="text" placeholder="输入用户名，例如 torvalds" spellcheck="false" maxlength="64" aria-label="用户名">
+        <button type="submit" id="submit-btn">
+          <span class="btn-label">开始检测</span>
+          <span class="spinner" aria-hidden="true"></span>
+        </button>
+      </form>
 
-  <div id="status" class="status hidden"></div>
-  <div id="summary" class="summary hidden"></div>
-  <div id="results" class="results"></div>
+      <div class="hero-foot">
+        <span>试试：</span>
+        <button type="button" class="ghost-chip" data-sample="torvalds">torvalds</button>
+        <button type="button" class="ghost-chip" data-sample="gaearon">gaearon</button>
+        <button type="button" class="ghost-chip" data-sample="sindresorhus">sindresorhus</button>
+      </div>
+    </section>
 
-  <footer>
-    基于 <a href="https://github.com/sherlock-project/sherlock" target="_blank">Sherlock</a>
-    · 部署于 EdgeOne Makers · <a href="https://github.com/Theadvocate-bit/sherlock_edgeone" target="_blank">GitHub</a>
+    <section class="panel setup-panel">
+      <div class="setup-row">
+        <div class="field">
+          <label class="field-label">检测范围</label>
+          <div class="segmented" id="scope-switch" role="group" aria-label="检测范围">
+            <button type="button" class="seg active" data-scope="popular">常用站点 <b id="popular-count">—</b></button>
+            <button type="button" class="seg" data-scope="all">全部站点 <b id="all-count">—</b></button>
+          </div>
+        </div>
+
+        <div class="field field-inline">
+          <label class="switch">
+            <input type="checkbox" id="nsfw-toggle">
+            <span class="track" aria-hidden="true"></span>
+            <span class="switch-label">包含 NSFW 站点</span>
+          </label>
+          <button type="button" class="link-btn" id="advanced-toggle" aria-expanded="false">
+            高级设置
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 9l6 6 6-6"></path></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="advanced" id="advanced" hidden>
+        <label class="mini-field">
+          <span>单站点超时 <i>毫秒</i></span>
+          <input type="number" id="opt-timeout" min="2000" max="15000" step="500" value="9000">
+        </label>
+        <label class="mini-field">
+          <span>服务端并发</span>
+          <input type="number" id="opt-server-concurrency" min="1" max="20" step="1" value="8">
+        </label>
+        <label class="mini-field">
+          <span>浏览器并发批次</span>
+          <input type="number" id="opt-browser-concurrency" min="1" max="12" step="1" value="6">
+        </label>
+        <p class="hint">超时越短越快但误判越多；并发过高容易被目标站点限流。</p>
+      </div>
+
+      <div class="progress-wrap" id="progress-wrap" hidden>
+        <div class="progress-head">
+          <div class="progress-title">
+            <span id="progress-text">准备中…</span>
+            <span class="progress-eta" id="progress-eta"></span>
+          </div>
+          <button type="button" class="link-btn danger" id="stop-btn">停止</button>
+        </div>
+        <div class="progress-track"><div class="progress-bar" id="progress-bar"></div></div>
+      </div>
+    </section>
+
+    <section class="stats" id="stats" hidden>
+      <article class="stat stat-claimed">
+        <span class="stat-label">已注册</span>
+        <strong id="stat-claimed">0</strong>
+      </article>
+      <article class="stat stat-available">
+        <span class="stat-label">未注册</span>
+        <strong id="stat-available">0</strong>
+      </article>
+      <article class="stat stat-unknown">
+        <span class="stat-label">无法判断</span>
+        <strong id="stat-unknown">0</strong>
+      </article>
+      <article class="stat stat-pending">
+        <span class="stat-label">待检测</span>
+        <strong id="stat-pending">0</strong>
+      </article>
+    </section>
+
+    <section class="panel results-panel" id="results-panel" hidden>
+      <div class="results-head">
+        <div class="tabs" id="filter-tabs" role="tablist">
+          <button class="tab active" data-filter="claimed">已注册 <b>0</b></button>
+          <button class="tab" data-filter="available">未注册 <b>0</b></button>
+          <button class="tab" data-filter="unknown">无法判断 <b>0</b></button>
+          <button class="tab" data-filter="all">全部 <b>0</b></button>
+        </div>
+        <div class="results-actions">
+          <button type="button" class="link-btn" id="clear-reviews" hidden>清除人工标记</button>
+          <button type="button" class="link-btn" id="export-json">导出 JSON</button>
+          <button type="button" class="link-btn" id="export-csv">导出 CSV</button>
+          <button type="button" class="link-btn" id="copy-link">复制分享链接</button>
+        </div>
+      </div>
+      <div class="review-banner" id="review-banner" hidden>
+        <span class="rb-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 8v5"></path><circle cx="12" cy="16.5" r=".8" fill="currentColor" stroke="none"></circle><path d="M10.3 3.9 2.6 17.4A2 2 0 0 0 4.3 20.4h15.4a2 2 0 0 0 1.7-3l-7.7-13.5a2 2 0 0 0-3.4 0z"></path></svg>
+        </span>
+        <span class="rb-text" id="review-banner-text"></span>
+        <button type="button" class="mini-btn" id="review-jump">只看待复核</button>
+      </div>
+      <ul class="result-list" id="result-list"></ul>
+      <p class="empty" id="empty-hint" hidden>还没有结果</p>
+    </section>
+
+    <section class="notes">
+      <h3>结果怎么读</h3>
+      <ul>
+        <li><b>已注册</b>：站点返回 2xx 且没有命中"用户不存在"的特征，通常说明该用户名存在。</li>
+        <li><b>未注册</b>：状态码命中站点的"不存在"规则（404/错误码），或页面里出现站点约定的错误文案。</li>
+        <li><b>无法判断</b>：命中 Cloudflare 等 WAF 人机校验、超时、连接失败，或用户名不满足该站点规则（如只允许 4–12 位字母数字）。</li>
+        <li><b>人工复核</b>：拦截页通常是因为云函数的机房 IP 被风控，程序无法自己通过人机验证。点开那一行的「复核 →」，用你自己的浏览器打开确认，回来标成已注册 / 未注册即可 —— 标记会存在本机，重新检测时自动带出，并计入统计与导出。</li>
+        <li>结果只是"某个时刻该 URL 的响应"，不代表账号归属，也不保证与站点真实状态一致；部分站点有频率限制。</li>
+      </ul>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="wrap">
+      <span>数据来自 <a href="https://github.com/sherlock-project/sherlock" target="_blank" rel="noreferrer">sherlock-project/sherlock</a>（MIT），检测逻辑移植自其 Python 实现。</span>
+      <span class="dot">·</span>
+      <span>部署于 <a href="https://edgeone.ai/pages" target="_blank" rel="noreferrer">EdgeOne Makers</a></span>
+    </div>
   </footer>
-</div>
 
-<script>
-(function(){
-  const $ = id => document.getElementById(id);
-  const usernameInput=$("username"), searchBtn=$("search-btn"),
-    statusEl=$("status"), summaryEl=$("summary"), resultsEl=$("results");
-  let lastData=null;
-
-  const STATUS_META={
-    Claimed:{label:"已注册",cls:"claimed",dot:"dot-claimed"},
-    Available:{label:"未注册",cls:"available",dot:"dot-available"},
-    WAF:{label:"WAF拦截",cls:"waf",dot:"dot-waf"},
-    Unknown:{label:"未知",cls:"unknown",dot:"dot-unknown"},
-    Illegal:{label:"非法用户名",cls:"illegal",dot:"dot-illegal"}
-  };
-
-  function setStatus(msg,type){
-    if(!msg){statusEl.classList.add("hidden");return}
-    statusEl.textContent=msg;
-    statusEl.className="status"+(type==="loading"?" loading":type==="error"?" error":"");
-  }
-
-  function render(data,hideAvailable){
-    summaryEl.classList.remove("hidden");
-    resultsEl.innerHTML="";
-
-    const byStatus={};
-    for(const [site,info] of Object.entries(data.results)){
-      (byStatus[info.status]=byStatus[info.status]||[]).push({site,...info});
-    }
-
-    // summary cards
-    const cards=[
-      {num:data.found,label:"已注册",color:"var(--green)"},
-      {num:data.total_sites,label:"扫描站点",color:"var(--text)"},
-      {num:data.elapsed_seconds+"s",label:"耗时",color:"var(--text-2)"}
-    ];
-    summaryEl.innerHTML=cards.map(c=>
-      `<div class="summary-card"><div class="num" style="color:${c.color}">${c.num}</div>
-       <div class="label">${c.label}</div></div>`).join("");
-
-    // groups in priority order
-    const order=["Claimed","WAF","Unknown","Available","Illegal"];
-    for(const status of order){
-      const items=byStatus[status];
-      if(!items||!items.length)continue;
-      if(hideAvailable&&status==="Available")continue;
-
-      const meta=STATUS_META[status];
-      const group=document.createElement("div");
-      group.className="group";
-      group.innerHTML=`<h2><span class="dot ${meta.dot}"></span>${meta.label}
-        <span class="count">${items.length}</span></h2>`;
-
-      const list=document.createElement("div");
-      list.className="site-list";
-      items.sort((a,b)=>a.site.localeCompare(b.site));
-      for(const item of items){
-        const div=document.createElement("div");
-        div.className="site-item";
-        const linkStart=status==="Claimed"&&item.url
-          ?`<a href="${item.url}" target="_blank" rel="noopener noreferrer">${item.site}</a>`
-          :`<span style="color:var(--text)">${item.site}</span>`;
-        const httpBadge=item.http_status&&item.http_status!=="?"
-          ?`<span>HTTP ${item.http_status}</span>`:"";
-        div.innerHTML=`${linkStart}<div class="meta">${httpBadge}
-          <span class="badge badge-${meta.cls}">${meta.label}</span></div>`;
-        list.appendChild(div);
-      }
-      group.appendChild(list);
-      resultsEl.appendChild(group);
-    }
-  }
-
-  async function search(){
-    const username=usernameInput.value.trim();
-    if(!username){setStatus("请输入用户名","error");return}
-
-    searchBtn.disabled=true;
-    setStatus(`正在扫描 ${username} …`,"loading");
-    summaryEl.classList.add("hidden");
-    resultsEl.innerHTML="";
-
-    const params=new URLSearchParams({username});
-    const timeout=$("timeout").value;
-    if(timeout&&timeout!=="20")params.set("timeout",timeout);
-    if($("exclude-nsfw").checked)params.set("exclude_nsfw","true");
-
-    try{
-      const resp=await fetch(`/api/sherlock?${params}`);
-      const data=await resp.json();
-      if(!resp.ok)throw new Error(data.error||`HTTP ${resp.status}`);
-      setStatus("");
-      lastData=data;
-      render(data,$("hide-available").checked);
-    }catch(err){
-      setStatus("查询失败："+err.message,"error");
-    }finally{
-      searchBtn.disabled=false;
-    }
-  }
-
-  searchBtn.addEventListener("click",search);
-  usernameInput.addEventListener("keydown",e=>{if(e.key==="Enter")search()});
-  $("hide-available").addEventListener("change",function(){
-    if(lastData)render(lastData,this.checked);
-  });
-})();
-</script>
+  <div class="toast" id="toast" hidden></div>
+  <script type="module" src="/assets/app.js"></script>
 </body>
 </html>
