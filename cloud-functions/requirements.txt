@@ -1,4 +1,4 @@
-﻿# EdgeOne Makers auto-detects `requests` / `requests_futures` from imports.
+# EdgeOne Makers auto-detects `requests` / `requests_futures` from imports.
 # These lines pin versions and pull in the transitive deps sherlock needs.
 # pandas / openpyxl / colorama are intentionally omitted (CLI/export only).
 requests>=2.22.0
