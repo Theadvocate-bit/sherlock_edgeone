@@ -6,7 +6,9 @@
  *   node scripts/build-data.mjs --remote   # 直接从 GitHub 拉最新数据（构建机需可访问 GitHub）
  *
  * 输出：
- *   data/sites.json  给前端 + 云函数用的精简数据
+ *   data/sites.json      给前端 / 静态访问用的精简数据
+ *   lib/sites-data.mjs   同一份数据内联成 JS 模块，供云函数静态 import
+ *                        （避免运行时用相对路径读 fs——打包后目录会变，路径会失效）
  */
 import { readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -15,6 +17,7 @@ import path from 'node:path';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SOURCE = path.join(ROOT, 'data', 'sherlock-source.json');
 const OUTPUT = path.join(ROOT, 'data', 'sites.json');
+const MODULE_OUTPUT = path.join(ROOT, 'lib', 'sites-data.mjs');
 const UPSTREAM =
   'https://raw.githubusercontent.com/sherlock-project/sherlock/master/sherlock_project/resources/data.json';
 
@@ -96,7 +99,17 @@ const payload = {
 };
 
 await writeFile(OUTPUT, JSON.stringify(payload));
+
+// 内联成 JS 模块：云函数静态 import 它，打包器会直接打进去，
+// 不依赖运行时 fs 相对路径（Makers 打包后 data/ 不一定在函数旁边）。
+const moduleSource =
+  '// 本文件由 `node scripts/build-data.mjs` 自动生成，请勿手改。\n' +
+  '// 数据来自 sherlock-project/sherlock，仅在构建时刷新。\n' +
+  'export default ' + JSON.stringify(payload) + ';\n';
+await writeFile(MODULE_OUTPUT, moduleSource);
+
 const bytes = Buffer.byteLength(JSON.stringify(payload));
 console.log(`✓ ${sites.length} 个站点（常用 ${payload.popular} 个），输出 ${(bytes / 1024).toFixed(1)} KB`);
+console.log(`  data/sites.json + lib/sites-data.mjs 已更新`);
 if (skipped.length) console.log(`  跳过 ${skipped.length} 个无效条目: ${skipped.join(', ')}`);
 if (popularMissing.length) console.log(`  ⚠ 常用列表里这些站点在数据集中不存在: ${popularMissing.join(', ')}`);

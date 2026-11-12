@@ -2,12 +2,7 @@
   "buildCommand": "node scripts/build-data.mjs",
   "nodeVersion": "22.11.0",
   "cloudFunctions": {
-    "nodejs": {
-      "maxDuration": 30,
-      "includeFiles": [
-        "data/sites.json"
-      ]
-    }
+    "maxDuration": 30
   },
   "headers": [
     {
